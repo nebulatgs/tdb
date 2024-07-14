@@ -1,0 +1,1 @@
+module.exports = require("./libv86.cjs")
