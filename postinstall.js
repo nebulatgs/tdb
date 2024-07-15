@@ -1,13 +1,18 @@
 // @ts-check
 
+import esDirname from "es-dirname";
 import { existsSync } from "fs";
 import path from "path";
 import { extract } from "tar";
+import { fileURLToPath } from "url";
 import XzDecompress from "xz-decompress";
 const { XzReadableStream } = XzDecompress;
 
 const DATA_DIR_VERSION = "v0.0.1-alpha";
-const unpackPath = path.join(path.dirname(import.meta.path), "src");
+const unpackPath = path.join(
+	esDirname() ?? path.dirname(fileURLToPath(import.meta.url)),
+	"src"
+);
 
 async function downloadBinaryFromGitHub() {
 	try {
