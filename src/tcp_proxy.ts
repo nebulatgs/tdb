@@ -34,6 +34,8 @@ interface Context {
 	buffers: Buffer[];
 	connected: boolean;
 	srcPort: number;
+	sequenceNumber: number;
+	ackNumber: number;
 	proxySocket: net.Socket | tls.TLSSocket;
 	serviceSocket?: net.Socket | tls.TLSSocket;
 }
@@ -45,8 +47,6 @@ type InterceptorFunction = (
 
 export class TcpProxy {
 	private proxyPort: number;
-	private sequenceNumber: number = 0;
-	private ackNumber: number = 0;
 	private serviceHosts: string[];
 	private servicePorts: number[];
 	private serviceHostIndex: number;
@@ -200,11 +200,13 @@ export class TcpProxy {
 		const context: Context = {
 			buffers: [],
 			connected: false,
+			sequenceNumber: 0,
+			ackNumber: 0,
 			srcPort: randomInt(1024, 65535),
 			proxySocket: proxySocket,
 		};
 		this.createServiceSocket(context);
-		[this.sequenceNumber, this.ackNumber] = await establishConnection(
+		[context.sequenceNumber, context.ackNumber] = await establishConnection(
 			"10.0.0.2",
 			"10.0.0.1",
 			3306,
@@ -238,14 +240,16 @@ export class TcpProxy {
 					"10.0.0.1",
 					3306,
 					context.srcPort,
-					this.sequenceNumber,
-					this.ackNumber,
+					context.sequenceNumber,
+					context.ackNumber,
 					this.emulator,
 					processedData
 				);
 				if (processedData.length > 0) {
-					this.sequenceNumber += data.length;
-					console.log(chalk.bold(`Sending ${data.length} bytes`));
+					context.sequenceNumber += data.length;
+					if (process.env.DEBUG) {
+						console.log(chalk.bold(`Sending ${data.length} bytes`));
+					}
 				}
 				// console.log("processedData", processedData);
 				// console.log(parseTCPPacket(processedData));
@@ -307,7 +311,10 @@ export class TcpProxy {
 				if (state.protocol === 6) {
 					// Parse TCP packet
 					const tcpPacket = parseTCPPacket(state.payload);
-					this.ackNumber = tcpPacket.seqNumber + tcpPacket.payload.length;
+					if (tcpPacket.dstPort !== context.srcPort) {
+						return;
+					}
+					context.ackNumber = tcpPacket.seqNumber + tcpPacket.payload.length;
 
 					context.proxySocket.write(tcpPacket.payload);
 
@@ -317,8 +324,8 @@ export class TcpProxy {
 							"10.0.0.1",
 							context.srcPort,
 							3306,
-							this.sequenceNumber,
-							this.ackNumber,
+							context.sequenceNumber,
+							context.ackNumber,
 							this.emulator,
 							Buffer.alloc(0)
 						);
@@ -328,8 +335,8 @@ export class TcpProxy {
 					// If the received packet has the ACK flag set, update our sequence number
 					if (tcpPacket.flags & 0x10) {
 						// 0x10 is the ACK flag
-						this.sequenceNumber = Math.max(
-							this.sequenceNumber,
+						context.sequenceNumber = Math.max(
+							context.sequenceNumber,
 							tcpPacket.ackNumber
 						);
 					}

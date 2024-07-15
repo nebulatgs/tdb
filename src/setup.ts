@@ -46,7 +46,7 @@ export async function networkUp(emulator: any) {
 	await waitForPrompt(emulator);
 }
 
-export async function startMySQLForwarding(emulator: any) {
+export async function startMySQLForwarding(port: number, emulator: any) {
 	emulator.serial0_send("slattach -v -L -s 115200 -p slip /dev/ttyS1   &\n");
 	await waitForPrompt(emulator);
 	emulator.serial0_send("sysctl -w net.ipv4.ip_forward=1\n");
@@ -64,7 +64,7 @@ export async function startMySQLForwarding(emulator: any) {
 	// );
 	// await waitForPrompt(emulator);
 
-	const proxy = new TcpProxy(3307, "127.0.0.1", 3306, emulator, {
+	const proxy = new TcpProxy(port, "127.0.0.1", 3306, emulator, {
 		hostname: "127.0.0.1",
 	});
 
@@ -93,7 +93,7 @@ export async function startMySQL(emulator: any) {
 	await waitForPrompt(emulator);
 	await waitForSerialLine(emulator, "Alpine Linux", 2);
 	emulator.serial0_send(
-		`mysql -uroot mysql -p -e "GRANT ALL PRIVILEGES ON *.* TO 'root'@'10.0.0.%' IDENTIFIED BY 'admin' WITH GRANT OPTION"\n\n`
+		`mysql -uroot mysql -padmin -e "GRANT ALL PRIVILEGES ON *.* TO 'root'@'10.0.0.%' IDENTIFIED BY 'admin' WITH GRANT OPTION"\n\n`
 	);
 	await waitForPrompt(emulator);
 }

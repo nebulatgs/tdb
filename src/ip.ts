@@ -408,43 +408,47 @@ export function waitForSYNACK(
 	});
 }
 
-export function waitForACK(
-	emulator: any,
-	initialSeqNumber: number
-): Promise<void> {
-	return new Promise((resolve, reject) => {
-		const decoder = new slip.Decoder({
-			maxMessageSize: 209715200,
-			bufferSize: 2048,
-			onMessage: (msg) => {
-				const state = parseIPPacket(Buffer.from(msg));
-				if (state.protocol === 6) {
-					const tcpPacket = parseTCPPacket(state.payload);
-					if (
-						tcpPacket.flags === 0x10 &&
-						tcpPacket.ackNumber === initialSeqNumber + 1
-					) {
-						// Remove the listener and resolve the promise
-						emulator.remove_listener("serial1-output-byte", byteListener);
-						resolve();
-					}
-				}
-			},
-		});
+// export function waitForACK(
+// 	emulator: any,
+// 	srcPort: number,
+// 	initialSeqNumber: number
+// ): Promise<void> {
+// 	return new Promise((resolve, reject) => {
+// 		const decoder = new slip.Decoder({
+// 			maxMessageSize: 209715200,
+// 			bufferSize: 2048,
+// 			onMessage: (msg) => {
+// 				const state = parseIPPacket(Buffer.from(msg));
+// 				if (state.protocol === 6) {
+// 					const tcpPacket = parseTCPPacket(state.payload);
+// 					if (tcpPacket.dstPort !== srcPort) {
+// 						return;
+// 					}
+// 					if (
+// 						tcpPacket.flags === 0x10 &&
+// 						tcpPacket.ackNumber === initialSeqNumber + 1
+// 					) {
+// 						// Remove the listener and resolve the promise
+// 						emulator.remove_listener("serial1-output-byte", byteListener);
+// 						resolve();
+// 					}
+// 				}
+// 			},
+// 		});
 
-		const byteListener = (byte: number) => {
-			decoder.decode(Buffer.from([byte]));
-		};
+// 		const byteListener = (byte: number) => {
+// 			decoder.decode(Buffer.from([byte]));
+// 		};
 
-		emulator.add_listener("serial1-output-byte", byteListener);
+// 		emulator.add_listener("serial1-output-byte", byteListener);
 
-		// Add a timeout to prevent hanging indefinitely
-		setTimeout(() => {
-			emulator.remove_listener("serial1-output-byte", byteListener);
-			reject(new Error("Timeout waiting for ACK"));
-		}, 30000); // 30 seconds timeout
-	});
-}
+// 		// Add a timeout to prevent hanging indefinitely
+// 		setTimeout(() => {
+// 			emulator.remove_listener("serial1-output-byte", byteListener);
+// 			reject(new Error("Timeout waiting for ACK"));
+// 		}, 30000); // 30 seconds timeout
+// 	});
+// }
 
 export async function sendTCPPacket(
 	srcIP: string,
@@ -477,8 +481,8 @@ export async function sendTCPPacket(
 
 	// Send data packet
 	sendPacketToSLIPDevice(dataIPPacket, emulator);
-
-	await waitForACK(emulator, lastSeq);
+	// TODO: Implement ACK windows
+	// await waitForACK(emulator, srcPort, lastSeq);
 }
 
 const ACK_FLAG = 0x10; // ACK flag
@@ -554,6 +558,9 @@ function padLeft(str: string, length: number): string {
 }
 
 export function logTCPIPPacket(ipPacket: Buffer) {
+	if (!process.env.DEBUG) {
+		return;
+	}
 	const decodedIp = parseIPPacket(ipPacket);
 	const { srcIP, dstIP } = decodedIp;
 	const colorfulSrcIP =
