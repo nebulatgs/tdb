@@ -7,7 +7,7 @@ import { extract } from "tar";
 import XzDecompress from "xz-decompress";
 const { XzReadableStream } = XzDecompress;
 
-const DATA_DIR_VERSION = "v0.0.1-alpha";
+const DATA_DIR_VERSION = "v0.0.2-alpha";
 const unpackPath = dirname(import.meta.url);
 
 async function downloadBinaryFromGitHub() {
