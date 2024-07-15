@@ -1,49 +1,40 @@
-import { Args, Command, Flags } from "@oclif/core";
-import * as V86NS from "../lib/libv86.cjs";
+import * as V86NS from "$lib/libv86.cjs";
+import { defineCommand } from "clerc";
+import path from "path";
+import { fileURLToPath } from "url";
 const { V86 } = V86NS;
 
-export default class Mysql extends Command {
-	static override args = {
-		file: Args.string({ description: "file to read" }),
-	};
+const dirname = path.join(
+	path.dirname(fileURLToPath(import.meta.url)),
+	"..",
+	".."
+);
 
-	static override description = "describe the command here";
-
-	static override examples = ["<%= config.bin %> <%= command.id %>"];
-
-	static override flags = {
-		// flag with no value (-f, --force)
-		force: Flags.boolean({ char: "f" }),
-		// flag with a value (-n, --name=VALUE)
-		name: Flags.string({ char: "n", description: "name to print" }),
-	};
-
-	public async run(): Promise<void> {
-		const { args, flags } = await this.parse(Mysql);
-
-		// const name = flags.name ?? 'world'
-		// this.log(`hello ${name} from /Users/nebula/projects/azide/pglite/src/commands/mysql.ts`)
-		// if (args.file && flags.force) {
-		//   this.log(`you input --force and --file: ${args.file}`)
-		// }
-
+export const command = defineCommand(
+	{
+		name: "mysql",
+		description: "test",
+		flags: {},
+		parameters: [],
+	},
+	(context) => {
 		console.log("Now booting, please stand by ...");
 
 		const emulator = new V86({
-			bios: { url: import.meta.dirname + "/../data/bios/seabios.bin" },
+			bios: { url: path.join(dirname, "/data/bios/seabios.bin") },
 			bzimage: {
-				url: import.meta.dirname + "/../data/filesystem/ee0eefa2.bin",
+				url: path.join(dirname, "/data/filesystem/ee0eefa2.bin"),
 			},
 			cmdline: [
 				"rw",
 				"root=host9p rootfstype=9p rootflags=version=9p2000.L,trans=virtio,cache=loose quiet acpi=off console=ttyS0 tsc=reliable mitigations=off random.trust_cpu=on nowatchdog page_poison=on",
 			].join(" "),
 
-			wasm_path: import.meta.dirname + "/../lib/v86.wasm",
+			wasm_path: path.join(dirname, "/lib/v86.wasm"),
 			memory_size: 512 * 1024 * 1024,
 			filesystem: {
-				basefs: import.meta.dirname + "/../data/filesystem/filesystem.json",
-				baseurl: import.meta.dirname + "/../data/filesystem/",
+				basefs: path.join(dirname, "/data/filesystem/filesystem.json"),
+				baseurl: path.join(dirname, "/data/filesystem/"),
 			},
 			network_relay_url: "wss://relay.widgetry.org/",
 			autostart: true,
@@ -58,13 +49,14 @@ export default class Mysql extends Command {
 
 		emulator.add_listener("serial0-output-byte", (byte: number) => {
 			const chr = String.fromCharCode(byte);
+
 			if (chr <= "~") {
 				process.stdout.write(chr);
 			}
 		});
-		emulator.serial_set_modem_status(1, 1);
 		emulator.add_listener("serial1-output-byte", (byte: number) => {
 			const chr = String.fromCharCode(byte);
+
 			if (chr <= "~") {
 				process.stdout.write(chr);
 			}
@@ -73,6 +65,8 @@ export default class Mysql extends Command {
 		process.stdin.on("data", (c) => {
 			if (c.toString() === "\u0003") {
 				// ctrl c
+				console.log("Ctrl+C pressed, stopping emulator.");
+
 				emulator.stop();
 				process.stdin.pause();
 			} else {
@@ -82,5 +76,17 @@ export default class Mysql extends Command {
 		process.stdin.setRawMode(true);
 		process.stdin.resume();
 		process.stdin.setEncoding("utf8");
+		// Bun related weirdness
+		if (typeof Bun !== "undefined") {
+			emulator.add_listener("emulator-ready", () => {
+				// Hack to make the emulator run in the background
+				const handle = setInterval(() => emulator.v86.do_tick(), 0);
+				process.stdin.on("data", (c) => {
+					if (c.toString() === "\u0003") {
+						clearInterval(handle);
+					}
+				});
+			});
+		}
 	}
-}
+);

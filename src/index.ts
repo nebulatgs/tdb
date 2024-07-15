@@ -1,22 +1,25 @@
-import { PGlite } from "@electric-sql/pglite";
-import { Command } from "@oclif/core";
-import { createServer } from "pglite-server";
+import { dirname, resolve } from "@discordx/importer";
+import { Clerc } from "clerc";
+const commands = await resolve(
+	`${dirname(import.meta.url)}/commands/*.{ts,js}`
+);
 
-export default class TDB extends Command {
-	public async run() {
-		const db = new PGlite("data");
-		await db.waitReady;
+const COMMANDS = await Promise.all(
+	commands.map(async (command) => {
+		const { command: cmd } = await import(command);
+		return cmd;
+	})
+);
 
-		await db.exec(`
-  create table if not exists test (id serial primary key, name text);
-  insert into test (name) values ('foo'), ('bar'), ('baz');
-`);
+export function run() {
+	let cli = Clerc.create()
+		.scriptName("tdb")
+		.description("Temporary databases in WASM.")
+		.version("0.0.1-alpha");
 
-		const PORT = 5432;
-		const pgServer = createServer(db);
-
-		pgServer.listen(PORT, () => {
-			console.log(`Server bound to port ${PORT}`);
-		});
+	for (const command of COMMANDS) {
+		cli = cli.command(command);
 	}
+
+	cli.parse();
 }

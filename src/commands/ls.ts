@@ -1,30 +1,17 @@
-import { Args, Command, Flags } from "@oclif/core";
+import { defineCommand } from "clerc";
+import path from "path";
+import { fileURLToPath } from "url";
 
-export default class Ls extends Command {
-	static override args = {
-		file: Args.string({ description: "file to read" }),
-	};
+const dirname = path.dirname(fileURLToPath(import.meta.url));
 
-	static override description = "describe the command here";
-
-	static override examples = ["<%= config.bin %> <%= command.id %>"];
-
-	static override flags = {
-		// flag with no value (-f, --force)
-		force: Flags.boolean({ char: "f" }),
-		// flag with a value (-n, --name=VALUE)
-		name: Flags.string({ char: "n", description: "name to print" }),
-	};
-
-	public async run(): Promise<void> {
-		const { args, flags } = await this.parse(Ls);
-
-		const name = flags.name ?? "world";
-		this.log(
-			`hello ${name} from /Users/nebula/projects/azide/pglite/src/commands/ls.ts`
-		);
-		if (args.file && flags.force) {
-			this.log(`you input --force and --file: ${args.file}`);
-		}
+export const command = defineCommand(
+	{
+		name: "ls",
+		description: "test",
+		flags: {},
+		parameters: [],
+	},
+	(context) => {
+		console.log("I live in", dirname);
 	}
-}
+);

@@ -1,7 +1,8 @@
 {
 	"include": ["src"],
 	"compilerOptions": {
-		"rootDir": "src",
+		"rootDir": ".",
+		"baseUrl": ".",
 		// Enable latest features
 		"lib": ["ESNext"],
 		"outDir": "dist",
@@ -24,6 +25,9 @@
 		// Some stricter flags (disabled by default)
 		"noUnusedLocals": false,
 		"noUnusedParameters": false,
-		"noPropertyAccessFromIndexSignature": false
+		"noPropertyAccessFromIndexSignature": false,
+		"paths": {
+			"$lib/*": ["lib/*"]
+		}
 	}
 }
