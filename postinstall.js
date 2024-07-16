@@ -48,7 +48,7 @@ async function downloadBinaryFromGitHub() {
 
 function isDataDirDownloaded() {
 	try {
-		return existsSync(path.join(DATA_DIR, "data"));
+		return existsSync(DATA_DIR);
 	} catch (e) {
 		return false;
 	}
