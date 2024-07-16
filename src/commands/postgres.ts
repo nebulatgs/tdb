@@ -74,7 +74,15 @@ export const command = defineCommand(
 			console.log(
 				`Instance is ready on port ${chalk.bold(context.flags.port)}`
 			);
-			console.log(`Persisting state to ${chalk.bold(context.flags.save)}`);
+			if (context.flags.save) {
+				console.log(`Persisting state to ${chalk.bold(context.flags.save)}`);
+			} else {
+				console.log(
+					`${chalk.bold(
+						"Note:"
+					)} This instance is temporary and will be lost on exit.`
+				);
+			}
 		});
 	}
 );

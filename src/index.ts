@@ -32,7 +32,7 @@ export function run() {
 	let cli = Clerc.create()
 		.scriptName("tdb")
 		.description("Temporary databases in WASM.")
-		.version("0.0.5-alpha")
+		.version("0.0.6-alpha")
 		.use(completionsPlugin())
 		.use(helpPlugin())
 		.use(notFoundPlugin());
