@@ -6,7 +6,7 @@
 	"scripts": {
 		"dev": "bun bin/bundle.js && node bin/run.js",
 		"build": "bun bin/bundle.js",
-		"dist": "bin/wrapper.sh",
+		"dist": "bin/wrapper",
 		"postinstall": "node postinstall.js"
 	},
 	"devDependencies": {
