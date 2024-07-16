@@ -34,7 +34,7 @@
 		"xz-decompress": "^0.2.2"
 	},
 	"bin": {
-		"tdb": "./bin/wrapper.sh",
+		"tdb": "./bin/wrapper",
 		"tdbjs": "./bin/run.js"
 	}
 }
