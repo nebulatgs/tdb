@@ -23,6 +23,7 @@ export const command = defineCommand(
 	{
 		name: "mysql",
 		description: "test",
+		alias: "mariadb",
 		flags: {
 			port: {
 				type: Number,
