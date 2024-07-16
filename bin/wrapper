@@ -4,7 +4,7 @@
 executors="node bun"
 
 for executor in $executors; do
-    if /usr/bin/env "$executor" "$(dirname "$0")/run.js" "$@"; then
+    if /usr/bin/env "$executor" "$(dirname "$0")/tdbjs" "$@"; then
         exit $?
     else
         exit_code=$?
