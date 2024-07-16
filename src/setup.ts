@@ -1,6 +1,6 @@
 import { writeFile } from "fs/promises";
 import path from "path";
-import { DATA_DIR } from "src";
+import { MYSQL_DIR } from "src";
 import { TcpProxy } from "./tcp_proxy";
 
 export function waitForSerialLine(emulator: any, line: string, tty: number) {
@@ -40,7 +40,7 @@ export async function setupBlankState(emulator: any) {
 	await networkUp(emulator);
 
 	const state = (await emulator.save_state()) as ArrayBuffer;
-	await writeFile(path.join(DATA_DIR, "/blank.state"), Buffer.from(state));
+	await writeFile(path.join(MYSQL_DIR, "/blank.state"), Buffer.from(state));
 }
 
 export async function networkUp(emulator: any) {

@@ -5,7 +5,7 @@ import { defineCommand } from "clerc";
 import { existsSync } from "fs";
 import { readFile, writeFile } from "fs/promises";
 import path from "path";
-import { DATA_DIR } from "src";
+import { DATA_DIR, MYSQL_DIR } from "src";
 import { checkPort } from "src/checkPort";
 import {
 	initializeMySQLNetworking,
@@ -63,7 +63,7 @@ export const command = defineCommand(
 		}
 		const stateExists =
 			context.flags.save &&
-			!!existsSync(path.join(DATA_DIR, `${context.flags.save}.state`));
+			!!existsSync(path.join(MYSQL_DIR, `${context.flags.save}.state`));
 		if (context.flags.save) {
 			if (stateExists) {
 				console.log(
@@ -166,7 +166,7 @@ export const command = defineCommand(
 			});
 		}
 
-		const blankState = existsSync(path.join(DATA_DIR, "blank.state"));
+		const blankState = existsSync(path.join(MYSQL_DIR, "blank.state"));
 		if (!blankState) {
 			console.log("Initializing blank instance on first run");
 			await setupBlankState(emulator);
@@ -175,13 +175,13 @@ export const command = defineCommand(
 		if (stateExists) {
 			console.log(`Restoring state from ${chalk.bold(context.flags.save)}`);
 			const state = await readFile(
-				path.join(DATA_DIR, `${context.flags.save}.state`)
+				path.join(MYSQL_DIR, `${context.flags.save}.state`)
 			);
 			await emulator.restore_state(state);
 			startMySQLForwarding(context.flags.port, emulator);
 		} else {
 			console.log(`Loading blank instance`);
-			const state = await readFile(path.join(DATA_DIR, "blank.state"));
+			const state = await readFile(path.join(MYSQL_DIR, "blank.state"));
 			await emulator.restore_state(state);
 			await startMySQL(emulator);
 			await initializeMySQLNetworking(context.flags.port, emulator);
@@ -194,7 +194,7 @@ export const command = defineCommand(
 			lock = 1;
 			const state = (await emulator.save_state()) as unknown as ArrayBuffer;
 			await writeFile(
-				path.join(DATA_DIR, `${context.flags.save}.state`),
+				path.join(MYSQL_DIR, `${context.flags.save}.state`),
 				Buffer.from(state)
 			);
 			lock = 0;
@@ -204,7 +204,7 @@ export const command = defineCommand(
 				lock = 1;
 				const state = (await emulator.save_state()) as unknown as ArrayBuffer;
 				await writeFile(
-					path.join(DATA_DIR, `${context.flags.save}.state`),
+					path.join(MYSQL_DIR, `${context.flags.save}.state`),
 					Buffer.from(state)
 				);
 				lock = 0;

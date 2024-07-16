@@ -5,7 +5,7 @@ await build({
 	minify: true,
 	entryPoints: ["./src/**/*.ts"],
 	inject: ["./bin/cjs-shims.js"],
-	external: ["./capstone-x86.min.js", "./libwabt.js"],
+	external: ["./capstone-x86.min.js", "./libwabt.js", "@electric-sql/pglite"],
 	format: "esm",
 	loader: { ".node": "copy" },
 	outdir: "./dist",
@@ -13,4 +13,5 @@ await build({
 	plugins: [],
 	splitting: false,
 	treeShaking: true,
+	nodePaths: ["./node_modules"],
 });
