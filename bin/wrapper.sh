@@ -1,5 +1,5 @@
 #!/bin/sh
-executors=(bun node)
+executors=(node bun)
 
 for i in "${!executors[@]}"; do
     if /usr/bin/env "${executors[$i]}" "$(dirname "$0")/tdbjs" $@; then

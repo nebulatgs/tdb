@@ -1,18 +1,23 @@
 import * as V86NS from "$lib/libv86.cjs";
+import { dirname } from "@discordx/importer";
 import chalk from "chalk";
 import { defineCommand } from "clerc";
 import { existsSync } from "fs";
-import { readFile } from "fs/promises";
+import { readFile, writeFile } from "fs/promises";
 import path from "path";
-import { setupBlankState, startMySQL, startMySQLForwarding } from "src/setup";
-import { fileURLToPath } from "url";
+import { DATA_DIR } from "src";
+import { checkPort } from "src/checkPort";
+import {
+	initializeMySQLNetworking,
+	setupBlankState,
+	startMySQL,
+	startMySQLForwarding,
+} from "src/setup";
 const { V86 } = V86NS;
 
-const dirname = path.join(
-	path.dirname(fileURLToPath(import.meta.url)),
-	"..",
-	".."
-);
+function quoted(str: unknown) {
+	return `'${str}'`;
+}
 
 export const command = defineCommand(
 	{
@@ -32,27 +37,67 @@ export const command = defineCommand(
 				default: false,
 				description: "Show MySQL logs",
 			},
+
+			save: {
+				type: String,
+				alias: "s",
+				default: null,
+				description: "Save state with a given name",
+			},
 		},
 		parameters: [],
 	},
 	async (context) => {
-		console.log("Spinning up MySQL WASM instance...");
+		if (context.flags.save === "blank") {
+			console.log("Name 'blank' is reserved.");
+			return;
+		}
+
+		while (await checkPort(context.flags.port)) {
+			console.log(
+				`Port ${chalk.bold(
+					context.flags.port
+				)} is already in use. Trying ${chalk.bold(++context.flags.port)}...`
+			);
+		}
+		const stateExists =
+			context.flags.save &&
+			!!existsSync(path.join(DATA_DIR, `${context.flags.save}.state`));
+		if (context.flags.save) {
+			if (stateExists) {
+				console.log(
+					`Resuming instance ${chalk.bold(quoted(context.flags.save))}`
+				);
+			} else {
+				console.log(
+					`Creating new instance ${chalk.bold(quoted(context.flags.save))}`
+				);
+			}
+		} else {
+			console.log(`Starting temporary instance`);
+		}
 
 		const emulator = new V86({
-			bios: { url: path.join(dirname, "/data/bios/seabios.bin") },
+			bios: { url: path.join(DATA_DIR, "/bios/seabios.bin") },
 			bzimage: {
-				url: path.join(dirname, "/data/filesystem/efd779b5.bin"),
+				// Kernel bzImage is located in efd779b5.bin
+				url: path.join(DATA_DIR, "/filesystem/efd779b5.bin"),
 			},
 			cmdline: [
 				"rw",
 				"root=host9p rootfstype=9p rootflags=version=9p2000.L,trans=virtio,cache=loose quiet acpi=off console=ttyS0 tsc=reliable mitigations=off random.trust_cpu=on nowatchdog page_poison=on",
 			].join(" "),
-
-			wasm_path: path.join(dirname, "/lib/v86.wasm"),
+			// Located in the install directory, not the data directory
+			wasm_path: path.join(
+				dirname(import.meta.url),
+				"..",
+				"..",
+				"/lib/v86.wasm"
+			),
 			memory_size: 512 * 1024 * 1024,
 			filesystem: {
-				basefs: path.join(dirname, "/data/filesystem/filesystem.json"),
-				baseurl: path.join(dirname, "/data/filesystem/"),
+				basefs: path.join(DATA_DIR, "/filesystem/filesystem.json"),
+				baseurl: path.join(DATA_DIR, "/filesystem/"),
 			},
 			network_relay_url: "wss://relay.widgetry.org/",
 			autostart: true,
@@ -63,16 +108,8 @@ export const command = defineCommand(
 			uart1: true,
 			uart2: true,
 		});
-
-		// emulator.add_listener("serial0-output-byte", (byte: number) => {
-		// 	const chr = String.fromCharCode(byte);
-
-		// 	if (chr <= "~") {
-		// 		process.stdout.write(chr);
-		// 	}
-		// });
-		if (context.flags.logs) {
-			emulator.add_listener("serial2-output-byte", (byte: number) => {
+		if (process.env.DEBUG) {
+			emulator.add_listener("serial0-output-byte", (byte: number) => {
 				const chr = String.fromCharCode(byte);
 
 				if (chr <= "~") {
@@ -80,108 +117,32 @@ export const command = defineCommand(
 				}
 			});
 		}
-		// function parseIPPacket(packet: Buffer) {
-		// 	const version = (packet[0] >> 4) & 0xf;
-		// 	const headerLength = (packet[0] & 0xf) * 4;
-		// 	const protocol = packet[9];
-		// 	const srcIP = packet.slice(12, 16).join(".");
-		// 	const dstIP = packet.slice(16, 20).join(".");
+		if (context.flags.logs) {
+			let buffer = "";
+			emulator.add_listener("serial2-output-byte", (byte: number) => {
+				const chr = String.fromCharCode(byte);
 
-		// 	return {
-		// 		version,
-		// 		headerLength,
-		// 		protocol,
-		// 		srcIP,
-		// 		dstIP,
-		// 		payload: packet.slice(headerLength),
-		// 	};
-		// }
-		// function parseTCPPacket(packet: Buffer) {
-		// 	const srcPort = packet.readUInt16BE(0);
-		// 	const dstPort = packet.readUInt16BE(2);
-		// 	const seqNumber = packet.readUInt32BE(4);
-		// 	const ackNumber = packet.readUInt32BE(8);
-		// 	const headerLength = ((packet[12] >> 4) & 0xf) * 4;
-		// 	const flags = packet[13];
-		// 	const windowSize = packet.readUInt16BE(14);
-
-		// 	return {
-		// 		srcPort,
-		// 		dstPort,
-		// 		seqNumber,
-		// 		ackNumber,
-		// 		headerLength,
-		// 		flags,
-		// 		windowSize,
-		// 		payload: packet.slice(headerLength),
-		// 	};
-		// }
-
-		// const decoder = new slip.Decoder({
-		// 	maxMessageSize: 209715200,
-		// 	bufferSize: 2048,
-		// 	onError: (err) => {
-		// 		console.error("error:", err);
-		// 	},
-		// 	onMessage: (packet) => {
-		// 		const state = parseIPPacket(Buffer.from(packet));
-		// 		// console.log(state);
-		// 		if (state.protocol === 1 && state.dstIP === "10.0.0.2") {
-		// 			const response = respondICMPPacket(state.payload);
-		// 			const ipPacket = createIPPacket(
-		// 				state.dstIP,
-		// 				state.srcIP,
-		// 				1,
-		// 				response
-		// 			);
-
-		// 			emulator.serial_send_bytes(1, encodeSLIP(ipPacket));
-		// 		}
-		// 		if (state.protocol === 6) {
-		// 			// Parse TCP packet
-		// 			const tcpPacket = parseTCPPacket(state.payload);
-
-		// 			// console.log("Decoded TCP Packet:");
-		// 			// console.log(state, tcpPacket);
-		// 		}
-		// 	},
-		// });
-		// emulator.add_listener("serial1-output-byte", (byte: number) => {
-		// 	// const decoder = decodeSLIP((packet) => {
-		// 	// 	console.log("packet:", packet);
-
-		// 	// 	const state = ip.decode(Buffer.from(packet));
-
-		// 	// 	console.log("state:", state);
-		// 	// });
-		// 	// decoder(Buffer.from([byte]));
-
-		// 	decoder.decode(new Uint8Array([byte]));
-
-		// 	// const chr = String.fromCharCode(byte);
-
-		// 	// process.stdout.write(Buffer.from("SERIAL1: "));
-		// 	// process.stdout.write(chr);
-		// });
-
-		// process.stdin.on("data", (c) => {
-		// 	if (c.toString() === "\u0003") {
-		// 		// ctrl c
-		// 		console.log("Ctrl+C pressed, stopping emulator.");
-
-		// 		emulator.stop();
-		// 		process.stdin.pause();
-		// 		process.exit();
-		// 	} else {
-		// 		emulator.serial0_send(c);
-		// 	}
-		// });
-		// process.stdin.setRawMode(true);
-		// process.stdin.resume();
-		// process.stdin.setEncoding("utf8");
-
-		process.on("SIGINT", () => {
+				if (chr <= "~") {
+					if (chr === "\n") {
+						console.log(`  ${chalk.dim(buffer)}`);
+						buffer = "";
+						return;
+					}
+					buffer += chr;
+				}
+			});
+		}
+		let lock = 0;
+		process.on("SIGINT", async () => {
 			console.log("Gracefully exiting...");
+			if (lock) {
+				console.log("State is being saved. Please wait...");
+			}
+			while (lock) {
+				// Wait for state to save
+				await new Promise((resolve) => setTimeout(resolve, 100));
+			}
+			lock = 2;
 
 			emulator.stop();
 			process.stdin.pause();
@@ -205,20 +166,53 @@ export const command = defineCommand(
 			});
 		}
 
-		const state = existsSync(path.join(dirname, "/data/blank_state"));
-		if (state) {
-			const state = await readFile(path.join(dirname, "/data/blank_state"));
-			emulator.restore_state(state);
-		} else {
-			console.log(
-				"Setting up blank state (subsequent startups will be quicker)..."
-			);
+		const blankState = existsSync(path.join(DATA_DIR, "blank.state"));
+		if (!blankState) {
+			console.log("Initializing blank instance on first run");
 			await setupBlankState(emulator);
 		}
-		await startMySQL(emulator);
-		await startMySQLForwarding(context.flags.port, emulator);
-		console.log(
-			`MySQL WASM instance is running on ${chalk.bold(context.flags.port)}!`
-		);
+
+		if (stateExists) {
+			console.log(`Restoring state from ${chalk.bold(context.flags.save)}`);
+			const state = await readFile(
+				path.join(DATA_DIR, `${context.flags.save}.state`)
+			);
+			await emulator.restore_state(state);
+			startMySQLForwarding(context.flags.port, emulator);
+		} else {
+			console.log(`Loading blank instance`);
+			const state = await readFile(path.join(DATA_DIR, "blank.state"));
+			await emulator.restore_state(state);
+			await startMySQL(emulator);
+			await initializeMySQLNetworking(context.flags.port, emulator);
+			startMySQLForwarding(context.flags.port, emulator);
+		}
+
+		console.log(`Instance is ready on port ${chalk.bold(context.flags.port)}`);
+		if (context.flags.save) {
+			// `unknown` is a workaround for bad types :(
+			const state = (await emulator.save_state()) as unknown as ArrayBuffer;
+			await writeFile(
+				path.join(DATA_DIR, `${context.flags.save}.state`),
+				Buffer.from(state)
+			);
+			console.log(`Persisting state to ${chalk.bold(context.flags.save)}`);
+			setInterval(async () => {
+				if (lock >= 1) return;
+				lock = 1;
+				const state = (await emulator.save_state()) as unknown as ArrayBuffer;
+				await writeFile(
+					path.join(DATA_DIR, `${context.flags.save}.state`),
+					Buffer.from(state)
+				);
+				lock = 0;
+			}, 1000);
+		} else {
+			console.log(
+				`${chalk.bold(
+					"Note:"
+				)} This instance is temporary and will be lost on exit.`
+			);
+		}
 	}
 );

@@ -1,25 +1,33 @@
 // @ts-check
 
-import { dirname } from "@discordx/importer";
 import { existsSync } from "fs";
+import { ensureDir } from "fs-extra";
+import { homedir } from "os";
 import path from "path";
 import { extract } from "tar";
 import XzDecompress from "xz-decompress";
+
 const { XzReadableStream } = XzDecompress;
 
-const DATA_DIR_VERSION = "v0.0.2-alpha";
-const unpackPath = dirname(import.meta.url);
+const APP_VERSION = "v0.0.2-alpha";
+const APP_DIR = path.join(homedir(), `.tdb`);
+const DATA_DIR = path.join(APP_DIR, "data");
+
+async function ensureAppDirectories() {
+	await ensureDir(APP_DIR);
+	await ensureDir(DATA_DIR);
+}
 
 async function downloadBinaryFromGitHub() {
 	try {
 		const tarballDownloadBuffer = await fetch(
-			`https://github.com/nebulatgs/tdb/releases/download/${DATA_DIR_VERSION}/data.txz`
+			`https://github.com/nebulatgs/tdb/releases/download/${APP_VERSION}/data.txz`
 		)
 			.then((response) => new Response(new XzReadableStream(response.body)))
 			.then((response) => response.arrayBuffer());
 		const tarballBuffer = Buffer.from(tarballDownloadBuffer);
 		const unpack = extract({
-			cwd: unpackPath,
+			cwd: APP_DIR,
 			sync: false,
 		});
 
@@ -40,7 +48,7 @@ async function downloadBinaryFromGitHub() {
 
 function isDataDirDownloaded() {
 	try {
-		return existsSync(path.join(unpackPath, "data"));
+		return existsSync(path.join(DATA_DIR, "data"));
 	} catch (e) {
 		return false;
 	}
@@ -49,6 +57,7 @@ function isDataDirDownloaded() {
 // Skip downloading the binary if it was already installed via optionalDependencies
 if (!isDataDirDownloaded()) {
 	console.log("Data directory not found. Will download from GitHub.");
+	await ensureAppDirectories();
 	downloadBinaryFromGitHub();
 } else {
 	console.log("Data directory already installed.");

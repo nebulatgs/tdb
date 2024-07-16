@@ -1,8 +1,12 @@
 import { dirname, resolve } from "@discordx/importer";
 import { Clerc } from "clerc";
+import { homedir } from "os";
+import path from "path";
 const commands = await resolve(
 	`${dirname(import.meta.url)}/commands/*.{ts,js}`
 );
+export const APP_DIR = path.join(homedir(), `.tdb`);
+export const DATA_DIR = path.join(APP_DIR, "data");
 
 const COMMANDS = await Promise.all(
 	commands.map(async (command) => {

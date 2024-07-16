@@ -445,8 +445,9 @@ export function waitForSYNACK(
 // 		// Add a timeout to prevent hanging indefinitely
 // 		setTimeout(() => {
 // 			emulator.remove_listener("serial1-output-byte", byteListener);
-// 			reject(new Error("Timeout waiting for ACK"));
-// 		}, 30000); // 30 seconds timeout
+// 			resolve();
+// 			// reject(new Error("Timeout waiting for ACK"));
+// 		}, 3000); // 30 seconds timeout
 // 	});
 // }
 
@@ -512,8 +513,7 @@ export function sendACK(
 	dstPort: number,
 	lastAck: number,
 	lastSeq: number,
-	emulator: any,
-	message: Buffer
+	emulator: any
 ) {
 	// Create ACK packet
 	/// function createACKPacket(srcPort: number, dstPort: number, seqNumber: number, ackNumber: number, windowSize?: number): Buffer

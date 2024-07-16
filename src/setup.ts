@@ -1,4 +1,6 @@
 import { writeFile } from "fs/promises";
+import path from "path";
+import { DATA_DIR } from "src";
 import { TcpProxy } from "./tcp_proxy";
 
 export function waitForSerialLine(emulator: any, line: string, tty: number) {
@@ -38,7 +40,7 @@ export async function setupBlankState(emulator: any) {
 	await networkUp(emulator);
 
 	const state = (await emulator.save_state()) as ArrayBuffer;
-	await writeFile("data/blank_state", Buffer.from(state));
+	await writeFile(path.join(DATA_DIR, "/blank.state"), Buffer.from(state));
 }
 
 export async function networkUp(emulator: any) {
@@ -46,7 +48,7 @@ export async function networkUp(emulator: any) {
 	await waitForPrompt(emulator);
 }
 
-export async function startMySQLForwarding(port: number, emulator: any) {
+export async function initializeMySQLNetworking(port: number, emulator: any) {
 	emulator.serial0_send("slattach -v -L -s 115200 -p slip /dev/ttyS1   &\n");
 	await waitForPrompt(emulator);
 	emulator.serial0_send("sysctl -w net.ipv4.ip_forward=1\n");
@@ -54,29 +56,32 @@ export async function startMySQLForwarding(port: number, emulator: any) {
 	emulator.serial0_send("ip addr add 10.0.0.1 peer 10.0.0.2 dev sl0\n");
 	await waitForPrompt(emulator);
 	emulator.serial0_send("ip link set sl0 up\n");
-	// await waitForPrompt(emulator);
-	// emulator.serial0_send("ip route add 10.0.0.2 dev sl0\n");
+	await waitForPrompt(emulator);
 	emulator.serial0_send("ip route add default via 10.0.0.1 dev sl0\n");
 	await waitForPrompt(emulator);
+	// Port is now forwarded to /dev/ttyS3 (UART3)
+}
 
-	// emulator.serial0_send(
-	// 	"socat OPEN:/dev/ttyS1,raw,echo=0  UNIX-CONNECT:/run/mysqld/mysqld.sock"
-	// );
-	// await waitForPrompt(emulator);
-
-	const proxy = new TcpProxy(port, "127.0.0.1", 3306, emulator, {
+export async function startMySQLForwarding(port: number, emulator: any) {
+	return new TcpProxy(port, "127.0.0.1", 3306, emulator, {
 		hostname: "127.0.0.1",
 	});
-
-	// Port is now forwarded to /dev/ttyS3 (UART3)
 }
 
 export async function setupMySQL(emulator: any) {
 	emulator.serial0_send("chown mysql:mysql /run/mysqld\n");
 	await waitForPrompt(emulator);
-	emulator.serial0_send(
-		"mariadb-install-db --user=mysql --basedir=/usr --datadir=/var/lib/mysql\n"
-	);
+	emulator.serial0_send("echo '10.0.0.2 mysql' >> /etc/hosts\n");
+	await waitForPrompt(emulator);
+	if (process.env.DEBUG) {
+		emulator.serial0_send(
+			"mariadb-install-db --user=mysql --basedir=/usr --datadir=/var/lib/mysql\n"
+		);
+	} else {
+		emulator.serial0_send(
+			"mariadb-install-db --user=mysql --basedir=/usr --datadir=/var/lib/mysql > /dev/ttyS2\n"
+		);
+	}
 	await waitForPrompt(emulator);
 }
 

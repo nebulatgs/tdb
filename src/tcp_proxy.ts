@@ -213,10 +213,8 @@ export class TcpProxy {
 			context.srcPort,
 			this.emulator
 		);
-		proxySocket.on("data", (data) => {
-			// console.log("data", data);
-
-			this.handleUpstreamData(context, data);
+		proxySocket.on("data", async (data) => {
+			await this.handleUpstreamData(context, data);
 		});
 		proxySocket.on("close", () => {
 			delete this.proxySockets[this.uniqueKey(proxySocket)];
@@ -232,75 +230,84 @@ export class TcpProxy {
 		});
 	}
 
-	private handleUpstreamData(context: Context, data: Buffer): void {
-		Promise.resolve(this.intercept(this.options.upstream, context, data)).then(
-			async (processedData) => {
-				await sendTCPPacket(
-					"10.0.0.2",
-					"10.0.0.1",
-					3306,
-					context.srcPort,
-					context.sequenceNumber,
-					context.ackNumber,
-					this.emulator,
-					processedData
-				);
-				if (processedData.length > 0) {
-					context.sequenceNumber += data.length;
-					if (process.env.DEBUG) {
-						console.log(chalk.bold(`Sending ${data.length} bytes`));
+	private async handleUpstreamData(context: Context, data: Buffer) {
+		// Promise.resolve(this.intercept(this.options.upstream, context, data)).then(
+		// async (processedData) => {
+		const CHUNK_SIZE = 768;
+		const messageChunks = [];
+		if (data.length > CHUNK_SIZE) {
+			// Split the message into multiple packets
+			for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+				messageChunks.push(data.slice(i, i + CHUNK_SIZE));
+			}
+		} else {
+			messageChunks.push(data);
+		}
+
+		for (let i = 0; i < messageChunks.length; i++) {
+			const chunk = messageChunks[i];
+			await sendTCPPacket(
+				"10.0.0.2",
+				"10.0.0.1",
+				3306,
+				context.srcPort,
+				context.sequenceNumber,
+				context.ackNumber,
+				this.emulator,
+				chunk
+			);
+
+			if (chunk.length > 0) {
+				context.sequenceNumber += chunk.length;
+				if (!Number.isFinite(context.sequenceNumber)) {
+					context.sequenceNumber = 0;
+				}
+				if (process.env.DEBUG) {
+					if (messageChunks.length > 1) {
+						console.log(
+							chalk.bold(
+								`Sending ${chunk.length} bytes (chunk ${i + 1}/${
+									messageChunks.length
+								})`
+							)
+						);
+					} else {
+						console.log(chalk.bold(`Sending ${chunk.length} bytes`));
 					}
 				}
-				// console.log("processedData", processedData);
-				// console.log(parseTCPPacket(processedData));
-				// const tcpPacket = createTCPPacket(
-				// 	12345,
-				// 	3306,
-				// 	1000,
-				// 	2000,
-				// 	0x18,
-				// 	64240,
-				// 	processedData
-				// );
-				// console.log(parseTCPPacket(tcpPacket));
-				// const ipPacket = createIPPacket("10.0.0.254", "10.0.0.1", 6, tcpPacket);
-				// this.emulator.serial_send_bytes(1, encodeSLIP(ipPacket));
-				// if (context.connected) {
-				// 	context.serviceSocket!.write(processedData);
-				// } else {
-				// 	context.buffers.push(processedData);
-				// 	if (context.serviceSocket === undefined) {
-				// 		this.createServiceSocket(context);
-				// 	}
-				// }
 			}
-		);
+			// 	await new Promise((resolve) => setTimeout(resolve, 1000));
+		}
+		// console.log("processedData", processedData);
+		// console.log(parseTCPPacket(processedData));
+		// const tcpPacket = createTCPPacket(
+		// 	12345,
+		// 	3306,
+		// 	1000,
+		// 	2000,
+		// 	0x18,
+		// 	64240,
+		// 	processedData
+		// );
+		// console.log(parseTCPPacket(tcpPacket));
+		// const ipPacket = createIPPacket("10.0.0.254", "10.0.0.1", 6, tcpPacket);
+		// this.emulator.serial_send_bytes(1, encodeSLIP(ipPacket));
+		// if (context.connected) {
+		// 	context.serviceSocket!.write(processedData);
+		// } else {
+		// 	context.buffers.push(processedData);
+		// 	if (context.serviceSocket === undefined) {
+		// 		this.createServiceSocket(context);
+		// 	}
+		// }
+		// }
+		// );
 	}
 
 	private createServiceSocket(context: Context): void {
-		const options = this.parseServiceOptions(context);
-		// if (this.options.tls === "both") {
-		// 	context.serviceSocket = tls.connect(options, () => {
-		// 		this.writeBuffer(context);
-		// 	});
-		// } else {
-
-		// this.emulator.add_listener("serial1-output-byte", (byte: number) => {
-		// 	// console.log("byte", byte);
-		// 	context.proxySocket.write(Buffer.from("HELLO"));
-		// 	// Promise.resolve(
-		// 	// 	this.intercept(this.options.downstream, context, Buffer.from([byte]))
-		// 	// ).then((processedData) => context.proxySocket.write(processedData));
-		// });
-		// console.log("Creating service socket");
-
-		const logMessage = (msg: Uint8Array) => {
-			// console.log("A SLIP message was received! Here is it: " + msg);
-		};
-
 		const decoder = new slip.Decoder({
-			maxMessageSize: 209715200,
-			bufferSize: 2048,
+			// maxMessageSize: 209715200,
+			// bufferSize: 2048,
 			onError: (err) => {
 				console.error("error:", err);
 			},
@@ -326,8 +333,7 @@ export class TcpProxy {
 							3306,
 							context.sequenceNumber,
 							context.ackNumber,
-							this.emulator,
-							Buffer.alloc(0)
+							this.emulator
 						);
 
 						// this.sequenceNumber += 1;
