@@ -1,5 +1,5 @@
 import { dirname, resolve } from "@discordx/importer";
-import { Clerc } from "clerc";
+import { Clerc, completionsPlugin, helpPlugin, notFoundPlugin } from "clerc";
 import { homedir } from "os";
 import path from "path";
 const commands = await resolve(
@@ -19,7 +19,10 @@ export function run() {
 	let cli = Clerc.create()
 		.scriptName("tdb")
 		.description("Temporary databases in WASM.")
-		.version("0.0.1-alpha");
+		.version("0.0.2-alpha")
+		.use(completionsPlugin())
+		.use(helpPlugin())
+		.use(notFoundPlugin());
 
 	for (const command of COMMANDS) {
 		cli = cli.command(command);

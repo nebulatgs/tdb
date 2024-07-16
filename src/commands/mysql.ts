@@ -22,7 +22,7 @@ function quoted(str: unknown) {
 export const command = defineCommand(
 	{
 		name: "mysql",
-		description: "test",
+		description: "Launch a MySQL/MariaDB instance",
 		alias: "mariadb",
 		flags: {
 			port: {
@@ -135,7 +135,6 @@ export const command = defineCommand(
 		}
 		let lock = 0;
 		process.on("SIGINT", async () => {
-			console.log("Gracefully exiting...");
 			if (lock) {
 				console.log("State is being saved. Please wait...");
 			}
@@ -192,11 +191,13 @@ export const command = defineCommand(
 		console.log(`Instance is ready on port ${chalk.bold(context.flags.port)}`);
 		if (context.flags.save) {
 			// `unknown` is a workaround for bad types :(
+			lock = 1;
 			const state = (await emulator.save_state()) as unknown as ArrayBuffer;
 			await writeFile(
 				path.join(DATA_DIR, `${context.flags.save}.state`),
 				Buffer.from(state)
 			);
+			lock = 0;
 			console.log(`Persisting state to ${chalk.bold(context.flags.save)}`);
 			setInterval(async () => {
 				if (lock >= 1) return;
