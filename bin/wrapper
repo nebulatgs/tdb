@@ -1,16 +1,20 @@
 #!/bin/sh
-executors=(node bun)
 
-for i in "${!executors[@]}"; do
-    if /usr/bin/env "${executors[$i]}" "$(dirname "$0")/tdbjs" $@; then
+# Define the executors
+executors="node bun"
+
+for executor in $executors; do
+    if /usr/bin/env "$executor" "$(dirname "$0")/run.js" "$@"; then
         exit $?
     else
-        if [[ $? -eq 127 ]]; then
-            echo "Failed to run ${executors[$i]} tdbjs - error code: tool not found" >&2
+        exit_code=$?
+        if [ $exit_code -eq 127 ]; then
+            echo "Failed to run $executor tdbjs - error code: tool not found" >&2
         else
-            exit $? # Exit with the exit code from the failed command
+            exit $exit_code # Exit with the exit code from the failed command
         fi
     fi
 done
+
 # We didn't find any of them.
 exit 1
