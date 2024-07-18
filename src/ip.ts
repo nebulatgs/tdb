@@ -1,6 +1,22 @@
 import chalk from "chalk";
 import { randomInt } from "crypto";
-import slip from "slip";
+export const SOURCE_MAC = Buffer.from("001122334455", "hex");
+
+function createEthernetFrame(packet: Buffer, dstMAC: Buffer) {
+	const ethFrameLength = 14 + packet.length; // 14 bytes for Ethernet header
+	const ethFrame = Buffer.alloc(ethFrameLength);
+
+	// Ethernet header
+	dstMAC.copy(ethFrame, 0);
+	SOURCE_MAC.copy(ethFrame, 6);
+	ethFrame.writeUInt16BE(0x0800, 12); // EtherType for IPv4
+
+	// Copy IP packet into Ethernet frame
+	packet.copy(ethFrame, 14);
+
+	return ethFrame;
+}
+
 // SLIP special characters
 const END = 0xc0;
 const ESC = 0xdb;
@@ -213,36 +229,26 @@ export function createIPPacket(
 	return packet;
 }
 
-export function sendPacketToSLIPDevice(packet: Buffer, emulator: any) {
+// export function sendPacketToSLIPDevice(packet: Buffer, emulator: any) {
+// 	logTCPIPPacket(packet);
+// 	const encodedPacket = slipEncode(packet);
+// 	emulator.serial_send_bytes(1, encodedPacket);
+// }
+
+export function sendPacketToEthernetDevice(
+	packet: Buffer,
+	dstMAC: Buffer,
+	emulator: any
+) {
 	logTCPIPPacket(packet);
-	const encodedPacket = slipEncode(packet);
-	emulator.serial_send_bytes(1, encodedPacket);
-
-	// fs.open(devicePath, "w", (err, fd) => {
-	// 	if (err) {
-	// 		console.error(`Error opening ${devicePath}:`, err);
-	// 		return;
-	// 	}
-
-	// 	fs.write(fd, encodedPacket, (err, written, buffer) => {
-	// 		if (err) {
-	// 			console.error(`Error writing to ${devicePath}:`, err);
-	// 		} else {
-	// 			console.log(`Successfully wrote ${written} bytes to ${devicePath}`);
-	// 		}
-
-	// 		fs.close(fd, (err) => {
-	// 			if (err) {
-	// 				console.error(`Error closing ${devicePath}:`, err);
-	// 			}
-	// 		});
-	// 	});
-	// });
+	const frame = createEthernetFrame(packet, dstMAC);
+	emulator.bus.send("net0-receive", new Uint8Array(frame));
 }
 
 export async function establishConnection(
 	srcIP: string,
 	dstIP: string,
+	dstMAC: Buffer,
 	srcPort: number,
 	dstPort: number,
 	emulator: any
@@ -268,12 +274,13 @@ export async function establishConnection(
 	const synIPPacket = createIPPacket(srcIP, dstIP, 6, synPacket);
 
 	// Send SYN packet
-	sendPacketToSLIPDevice(synIPPacket, emulator);
+	sendPacketToEthernetDevice(synIPPacket, dstMAC, emulator);
 
 	const ackNumber = await waitForSYNACK(
 		emulator,
 		srcIP,
 		dstIP,
+		dstMAC,
 		srcPort,
 		dstPort,
 		initialSeqNumber
@@ -348,61 +355,66 @@ export function waitForSYNACK(
 	emulator: any,
 	srcIP: string,
 	dstIP: string,
+	dstMAC: Buffer,
 	srcPort: number,
 	dstPort: number,
 	initialSeqNumber: number
 ): Promise<number> {
 	return new Promise((resolve, reject) => {
-		const decoder = new slip.Decoder({
-			maxMessageSize: 209715200,
-			bufferSize: 2048,
-			onMessage: (msg) => {
-				const state = parseIPPacket(Buffer.from(msg));
-				if (state.protocol === 6) {
-					const tcpPacket = parseTCPPacket(state.payload);
-					if (
-						tcpPacket.flags === 0x12 &&
-						tcpPacket.ackNumber === initialSeqNumber + 1
-					) {
-						// Create ACK packet
-						const ackFlags = 0x10; // ACK flag
-						const ackPacket = createTCPPacket(
-							srcPort,
-							dstPort,
-							initialSeqNumber + 1,
-							tcpPacket.seqNumber + 1,
-							ackFlags,
-							64240,
-							Buffer.alloc(0)
-						);
+		function processFrame(msg: EthernetFrame) {
+			if (msg.etherType !== 0x0800) {
+				return;
+			}
+			if (!msg.destinationMAC.equals(SOURCE_MAC)) {
+				return;
+			}
 
-						// Calculate TCP checksum for ACK packet
-						const ackChecksum = calculateTCPChecksum(srcIP, dstIP, ackPacket);
-						ackPacket.writeUInt16BE(ackChecksum, 16);
+			const state = parseIPPacket(msg.payload);
+			if (state.protocol === 6) {
+				const tcpPacket = parseTCPPacket(state.payload);
+				if (
+					tcpPacket.flags === 0x12 &&
+					tcpPacket.ackNumber === initialSeqNumber + 1
+				) {
+					// Create ACK packet
+					const ackFlags = 0x10; // ACK flag
+					const ackPacket = createTCPPacket(
+						srcPort,
+						dstPort,
+						initialSeqNumber + 1,
+						tcpPacket.seqNumber + 1,
+						ackFlags,
+						64240,
+						Buffer.alloc(0)
+					);
 
-						// Create IP packet with ACK packet as payload
-						const ackIPPacket = createIPPacket(srcIP, dstIP, 6, ackPacket);
+					// Calculate TCP checksum for ACK packet
+					const ackChecksum = calculateTCPChecksum(srcIP, dstIP, ackPacket);
+					ackPacket.writeUInt16BE(ackChecksum, 16);
 
-						// Send ACK packet
-						sendPacketToSLIPDevice(ackIPPacket, emulator);
+					// Create IP packet with ACK packet as payload
+					const ackIPPacket = createIPPacket(srcIP, dstIP, 6, ackPacket);
 
-						// Remove the listener and resolve the promise
-						emulator.remove_listener("serial1-output-byte", byteListener);
-						resolve(tcpPacket.seqNumber + 1);
-					}
+					// Send ACK packet
+					// sendPacketToSLIPDevice(ackIPPacket, emulator);
+					sendPacketToEthernetDevice(ackIPPacket, dstMAC, emulator);
+
+					// Remove the listener and resolve the promise
+					emulator.remove_listener("net0-send", frameListener);
+					resolve(tcpPacket.seqNumber + 1);
 				}
-			},
-		});
+			}
+		}
 
-		const byteListener = (byte: number) => {
-			decoder.decode(Buffer.from([byte]));
+		const frameListener = (frame: Uint8Array) => {
+			processFrame(parseEthernetFrame(Buffer.from(frame)));
 		};
 
-		emulator.add_listener("serial1-output-byte", byteListener);
+		emulator.add_listener("net0-send", frameListener);
 
 		// Add a timeout to prevent hanging indefinitely
 		setTimeout(() => {
-			emulator.remove_listener("serial1-output-byte", byteListener);
+			emulator.remove_listener("net0-send", frameListener);
 			reject(new Error("Timeout waiting for SYN/ACK"));
 		}, 30000); // 30 seconds timeout
 	});
@@ -454,6 +466,7 @@ export function waitForSYNACK(
 export async function sendTCPPacket(
 	srcIP: string,
 	dstIP: string,
+	dstMAC: Buffer,
 	srcPort: number,
 	dstPort: number,
 	lastSeq: number,
@@ -481,7 +494,8 @@ export async function sendTCPPacket(
 	const dataIPPacket = createIPPacket(srcIP, dstIP, 6, dataPacket);
 
 	// Send data packet
-	sendPacketToSLIPDevice(dataIPPacket, emulator);
+	// sendPacketToSLIPDevice(dataIPPacket, emulator);
+	sendPacketToEthernetDevice(dataIPPacket, dstMAC, emulator);
 	// TODO: Implement ACK windows
 	// await waitForACK(emulator, srcPort, lastSeq);
 }
@@ -509,6 +523,7 @@ function createACKPacket(
 export function sendACK(
 	srcIP: string,
 	dstIP: string,
+	dstMAC: Buffer,
 	srcPort: number,
 	dstPort: number,
 	lastAck: number,
@@ -527,7 +542,8 @@ export function sendACK(
 	const ackIPPacket = createIPPacket(srcIP, dstIP, 6, ackPacket);
 
 	// Send ACK packet
-	sendPacketToSLIPDevice(ackIPPacket, emulator);
+	// sendPacketToSLIPDevice(ackIPPacket, emulator);
+	sendPacketToEthernetDevice(ackIPPacket, dstMAC, emulator);
 
 	return lastSeq;
 }
@@ -587,4 +603,104 @@ export function logTCPIPPacket(ipPacket: Buffer) {
 	console.log(
 		`${ipSection} ${portSection} ${flagsSection} ${seqSection} ${ackSection} ${winSection}`
 	);
+}
+
+export interface EthernetFrame {
+	destinationMAC: Buffer;
+	sourceMAC: Buffer;
+	etherType: number;
+	payload: Buffer;
+}
+
+export function parseEthernetFrame(buffer: Buffer): EthernetFrame {
+	if (buffer.length < 14) {
+		throw new Error("Buffer is too small to contain a valid Ethernet frame");
+	}
+
+	const destinationMAC = buffer.slice(0, 6);
+	// .toString("hex")
+	// .match(/.{1,2}/g)
+	// ?.join(":") || "";
+	const sourceMAC = buffer.slice(6, 12);
+	// .toString("hex")
+	// .match(/.{1,2}/g)
+	// ?.join(":") || "";
+	const etherType = buffer.readUInt16BE(12);
+	const payload = buffer.slice(14);
+
+	return {
+		destinationMAC,
+		sourceMAC,
+		etherType,
+		payload,
+	};
+}
+
+export function sendARPRequest(srcIP: string, dstIP: string, emulator: any) {
+	return new Promise<Buffer>((resolve) => {
+		const SOURCE_IP = Buffer.from(
+			srcIP.split(".").map((octet) => parseInt(octet))
+		);
+		const DEST_IP = Buffer.from(
+			dstIP.split(".").map((octet) => parseInt(octet))
+		);
+		const arpRequest = Buffer.alloc(42);
+
+		// Ethernet header
+		arpRequest.write("FFFFFFFFFFFF", 0, "hex"); // Broadcast
+		SOURCE_MAC.copy(arpRequest, 6);
+		arpRequest.writeUInt16BE(0x0806, 12); // ARP EtherType
+
+		// ARP payload
+		arpRequest.writeUInt16BE(1, 14); // Hardware type: Ethernet
+		arpRequest.writeUInt16BE(0x0800, 16); // Protocol type: IPv4
+		arpRequest.writeUInt8(6, 18); // Hardware size
+		arpRequest.writeUInt8(4, 19); // Protocol size
+		arpRequest.writeUInt16BE(1, 20); // Opcode: request
+		SOURCE_MAC.copy(arpRequest, 22);
+		SOURCE_IP.copy(arpRequest, 28);
+		arpRequest.fill(0, 32, 38); // Target MAC (unknown)
+		DEST_IP.copy(arpRequest, 38);
+
+		emulator.add_listener("net0-send", (data: Uint8Array) => {
+			const frame = Buffer.from(data);
+			if (frame.readUInt16BE(12) === 0x0806 && frame.readUInt16BE(20) === 2) {
+				const dstMAC = frame.slice(6, 12);
+				resolve(dstMAC);
+			}
+		});
+
+		// RESPOND TO ARP REQUEST
+		emulator.add_listener("net0-send", (data: Uint8Array) => {
+			const frame = Buffer.from(data);
+			if (frame.readUInt16BE(12) === 0x0806 && frame.readUInt16BE(20) === 1) {
+				const srcMAC = frame.slice(6, 12);
+				const srcIP = frame.slice(28, 32).join(".");
+				const response = Buffer.alloc(42);
+
+				// Ethernet header
+				srcMAC.copy(response, 0);
+				SOURCE_MAC.copy(response, 6);
+				response.writeUInt16BE(0x0806, 12); // ARP EtherType
+
+				// ARP payload
+				response.writeUInt16BE(1, 14); // Hardware type: Ethernet
+				response.writeUInt16BE(0x0800, 16); // Protocol type: IPv4
+				response.writeUInt8(6, 18); // Hardware size
+				response.writeUInt8(4, 19); // Protocol size
+				response.writeUInt16BE(2, 20); // Opcode: reply
+				SOURCE_MAC.copy(response, 22);
+				SOURCE_IP.copy(response, 28);
+				srcMAC.copy(response, 32);
+				srcIP.split(".").forEach((octet, index) => {
+					response[38 + index] = parseInt(octet);
+				});
+				console.log("Responded to ARP request");
+
+				emulator.bus.send("net0-receive", new Uint8Array(response));
+			}
+		});
+
+		emulator.bus.send("net0-receive", new Uint8Array(arpRequest));
+	});
 }

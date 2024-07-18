@@ -81,8 +81,8 @@ export const command = defineCommand(
 		const emulator = new V86({
 			bios: { url: path.join(DATA_DIR, "/bios/seabios.bin") },
 			bzimage: {
-				// Kernel bzImage is located in efd779b5.bin
-				url: path.join(DATA_DIR, "/filesystem/efd779b5.bin"),
+				// Kernel bzImage is located in cb6b4f97.bin
+				url: path.join(DATA_DIR, "/filesystem/cb6b4f97.bin"),
 			},
 			cmdline: [
 				"rw",
@@ -100,7 +100,6 @@ export const command = defineCommand(
 				basefs: path.join(DATA_DIR, "/filesystem/filesystem.json"),
 				baseurl: path.join(DATA_DIR, "/filesystem/"),
 			},
-			network_relay_url: "wss://relay.widgetry.org/",
 			autostart: true,
 			disable_keyboard: true,
 			disable_mouse: true,
@@ -109,6 +108,19 @@ export const command = defineCommand(
 			uart1: true,
 			uart2: true,
 		});
+
+		// emulator.add_listener("net0-send", (packet: Uint8Array) => {
+		// 	const frame = parseEthernetFrame(Buffer.from(packet));
+		// 	console.log(frame);
+
+		// 	// if (frame.etherType === 0x0800) {
+		// 	// 	// IPv4
+		// 	// 	const packet = parseIPPacket(frame.payload);
+		// 	// 	const tcp = parseTCPPacket(packet.payload);
+		// 	// 	console.log(tcp);
+		// 	// }
+		// });
+
 		if (process.env.DEBUG) {
 			emulator.add_listener("serial0-output-byte", (byte: number) => {
 				const chr = String.fromCharCode(byte);
@@ -134,20 +146,24 @@ export const command = defineCommand(
 			});
 		}
 		let lock = 0;
-		process.on("SIGINT", async () => {
-			if (lock) {
-				console.log("State is being saved. Please wait...");
-			}
-			while (lock) {
-				// Wait for state to save
-				await new Promise((resolve) => setTimeout(resolve, 100));
-			}
-			lock = 2;
+		["SIGINT", "SIGTERM", "uncaughtException", "unhandledRejection"].forEach(
+			(code) =>
+				process.on(code, async (e) => {
+					if (lock) {
+						console.log("State is being saved. Please wait...");
+					}
+					while (lock) {
+						// Wait for state to save
+						await new Promise((resolve) => setTimeout(resolve, 100));
+					}
+					lock = 2;
 
-			emulator.stop();
-			process.stdin.pause();
-			process.exit();
-		});
+					emulator.stop();
+					process.stdin.pause();
+					console.error(e);
+					process.exit();
+				})
+		);
 
 		await new Promise<void>((resolve) => {
 			emulator.add_listener("emulator-ready", () => {

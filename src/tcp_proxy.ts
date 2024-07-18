@@ -2,16 +2,19 @@ import chalk from "chalk";
 import { randomInt } from "crypto";
 import * as fs from "fs";
 import * as net from "net";
-import slip from "slip";
 import * as tls from "tls";
 import * as util from "util";
 import {
 	establishConnection,
 	logTCPIPPacket,
+	parseEthernetFrame,
 	parseIPPacket,
 	parseTCPPacket,
 	sendACK,
+	sendARPRequest,
 	sendTCPPacket,
+	SOURCE_MAC,
+	type EthernetFrame,
 } from "./ip";
 interface TcpProxyOptions {
 	quiet?: boolean;
@@ -34,6 +37,7 @@ interface Context {
 	buffers: Buffer[];
 	connected: boolean;
 	srcPort: number;
+	macAddress: Buffer;
 	sequenceNumber: number;
 	ackNumber: number;
 	proxySocket: net.Socket | tls.TLSSocket;
@@ -197,18 +201,25 @@ export class TcpProxy {
 	private async handleClient(proxySocket: net.Socket | tls.TLSSocket) {
 		const key = this.uniqueKey(proxySocket);
 		this.proxySockets[key] = proxySocket;
+		const macAddress = await sendARPRequest(
+			"10.0.0.2",
+			"10.0.0.1",
+			this.emulator
+		);
 		const context: Context = {
 			buffers: [],
 			connected: false,
 			sequenceNumber: 0,
 			ackNumber: 0,
 			srcPort: randomInt(1024, 65535),
-			proxySocket: proxySocket,
+			macAddress,
+			proxySocket,
 		};
 		this.createServiceSocket(context);
 		[context.sequenceNumber, context.ackNumber] = await establishConnection(
 			"10.0.0.2",
 			"10.0.0.1",
+			context.macAddress,
 			3306,
 			context.srcPort,
 			this.emulator
@@ -233,7 +244,7 @@ export class TcpProxy {
 	private async handleUpstreamData(context: Context, data: Buffer) {
 		// Promise.resolve(this.intercept(this.options.upstream, context, data)).then(
 		// async (processedData) => {
-		const CHUNK_SIZE = 768;
+		const CHUNK_SIZE = 1448;
 		const messageChunks = [];
 		if (data.length > CHUNK_SIZE) {
 			// Split the message into multiple packets
@@ -249,6 +260,7 @@ export class TcpProxy {
 			await sendTCPPacket(
 				"10.0.0.2",
 				"10.0.0.1",
+				context.macAddress,
 				3306,
 				context.srcPort,
 				context.sequenceNumber,
@@ -305,53 +317,54 @@ export class TcpProxy {
 	}
 
 	private createServiceSocket(context: Context): void {
-		const decoder = new slip.Decoder({
-			// maxMessageSize: 209715200,
-			// bufferSize: 2048,
-			onError: (err) => {
-				console.error("error:", err);
-			},
-			onMessage: (packet) => {
-				logTCPIPPacket(Buffer.from(packet));
-				const state = parseIPPacket(Buffer.from(packet));
+		const processFrame = (msg: EthernetFrame) => {
+			if (msg.etherType !== 0x0800) {
+				return;
+			}
+			if (!msg.destinationMAC.equals(SOURCE_MAC)) {
+				return;
+			}
+			const packet = msg.payload;
+			logTCPIPPacket(Buffer.from(packet));
+			const state = parseIPPacket(Buffer.from(packet));
 
-				if (state.protocol === 6) {
-					// Parse TCP packet
-					const tcpPacket = parseTCPPacket(state.payload);
-					if (tcpPacket.dstPort !== context.srcPort) {
-						return;
-					}
-					context.ackNumber = tcpPacket.seqNumber + tcpPacket.payload.length;
-
-					context.proxySocket.write(tcpPacket.payload);
-
-					if (tcpPacket.payload.length > 0) {
-						sendACK(
-							"10.0.0.2",
-							"10.0.0.1",
-							context.srcPort,
-							3306,
-							context.sequenceNumber,
-							context.ackNumber,
-							this.emulator
-						);
-
-						// this.sequenceNumber += 1;
-					}
-					// If the received packet has the ACK flag set, update our sequence number
-					if (tcpPacket.flags & 0x10) {
-						// 0x10 is the ACK flag
-						context.sequenceNumber = Math.max(
-							context.sequenceNumber,
-							tcpPacket.ackNumber
-						);
-					}
+			if (state.protocol === 6) {
+				// Parse TCP packet
+				const tcpPacket = parseTCPPacket(state.payload);
+				if (tcpPacket.dstPort !== context.srcPort) {
+					return;
 				}
-			},
-		});
+				context.ackNumber = tcpPacket.seqNumber + tcpPacket.payload.length;
 
-		this.emulator.add_listener("serial1-output-byte", (byte: number) => {
-			decoder.decode(Buffer.from([byte]));
+				context.proxySocket.write(tcpPacket.payload);
+
+				if (tcpPacket.payload.length > 0) {
+					sendACK(
+						"10.0.0.2",
+						"10.0.0.1",
+						context.macAddress,
+						context.srcPort,
+						3306,
+						context.sequenceNumber,
+						context.ackNumber,
+						this.emulator
+					);
+
+					// this.sequenceNumber += 1;
+				}
+				// If the received packet has the ACK flag set, update our sequence number
+				if (tcpPacket.flags & 0x10) {
+					// 0x10 is the ACK flag
+					context.sequenceNumber = Math.max(
+						context.sequenceNumber,
+						tcpPacket.ackNumber
+					);
+				}
+			}
+		};
+
+		this.emulator.add_listener("net0-send", (frame: Uint8Array) => {
+			processFrame(parseEthernetFrame(Buffer.from(frame)));
 		});
 
 		// this.emulator.add_listener("serial1-output-byte", (byte: number) => {

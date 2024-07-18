@@ -49,16 +49,26 @@ export async function networkUp(emulator: any) {
 }
 
 export async function initializeMySQLNetworking(port: number, emulator: any) {
-	emulator.serial0_send("slattach -v -L -s 115200 -p slip /dev/ttyS1   &\n");
+	// emulator.serial0_send("slattach -v -L -s 4000000 -p slip /dev/ttyS1  &\n");
+	// await waitForPrompt(emulator);
+	emulator.serial0_send("modprobe ne2k-pci\n");
+	await waitForPrompt(emulator);
+	// emulator.serial0_send("dmesg\n");
+	// await waitForPrompt(emulator);
+	// await new Promise((resolve) => setTimeout(resolve, 1000));
+	// emulator.serial0_send("ip link show\n");
 	await waitForPrompt(emulator);
 	emulator.serial0_send("sysctl -w net.ipv4.ip_forward=1\n");
 	await waitForPrompt(emulator);
-	emulator.serial0_send("ip addr add 10.0.0.1 peer 10.0.0.2 dev sl0\n");
+	emulator.serial0_send("ip addr add 10.0.0.1 peer 10.0.0.2 dev eth0\n");
 	await waitForPrompt(emulator);
-	emulator.serial0_send("ip link set sl0 up\n");
+	emulator.serial0_send("ip link set dev eth0 mtu 1500\n");
 	await waitForPrompt(emulator);
-	emulator.serial0_send("ip route add default via 10.0.0.1 dev sl0\n");
+	emulator.serial0_send("ip link set eth0 up\n");
 	await waitForPrompt(emulator);
+	emulator.serial0_send("ip route add default via 10.0.0.1 dev eth0\n");
+	await waitForPrompt(emulator);
+	// emulator.serial0_send("watch -n 0.5 ifconfig\n");
 	// Port is now forwarded to /dev/ttyS3 (UART3)
 }
 
