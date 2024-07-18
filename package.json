@@ -1,5 +1,5 @@
 {
-	"version": "0.0.6-alpha",
+	"version": "0.0.7-alpha",
 	"name": "@nebulatgs/tdb",
 	"module": "index.ts",
 	"type": "module",

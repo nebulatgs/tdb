@@ -9,7 +9,7 @@ import XzDecompress from "xz-decompress";
 
 const { XzReadableStream } = XzDecompress;
 
-const APP_VERSION = "v0.0.6-alpha";
+const DATA_VERSION = "v0.0.6-alpha";
 const APP_DIR = path.join(homedir(), `.tdb`);
 const DATA_DIR = path.join(APP_DIR, "data");
 
@@ -21,7 +21,7 @@ async function ensureAppDirectories() {
 async function downloadBinaryFromGitHub() {
 	try {
 		const tarballDownloadBuffer = await fetch(
-			`https://github.com/nebulatgs/tdb/releases/download/${APP_VERSION}/data.txz`
+			`https://github.com/nebulatgs/tdb/releases/download/${DATA_VERSION}/data.txz`
 		)
 			.then((response) => new Response(new XzReadableStream(response.body)))
 			.then((response) => response.arrayBuffer());

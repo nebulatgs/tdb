@@ -86,12 +86,6 @@ export async function setupMySQL(emulator: any) {
 }
 
 export async function startMySQL(emulator: any) {
-	// emulator.serial0_send("echo 'bind-address=0.0.0.0' >> /etc/my.cnf\n");
-	// await waitForPrompt(emulator);
-	// emulator.serial0_send("echo 'port=3306' >> /etc/my.cnf\n");
-	// await waitForPrompt(emulator);
-	// emulator.serial0_send("echo 'skip-networking=0' >> /etc/my.cnf\n");
-	// await waitForPrompt(emulator);
 	emulator.serial0_send(
 		`setsid sh -c 'su mysql -c mysqld -s /bin/ash <> /dev/ttyS2 >&0 2>&1'\n`
 	);
@@ -99,6 +93,17 @@ export async function startMySQL(emulator: any) {
 	await waitForSerialLine(emulator, "Alpine Linux", 2);
 	emulator.serial0_send(
 		`mysql -uroot mysql -padmin -e "GRANT ALL PRIVILEGES ON *.* TO 'root'@'10.0.0.%' IDENTIFIED BY 'admin' WITH GRANT OPTION"\n\n`
+	);
+	await waitForPrompt(emulator);
+	emulator.serial0_send(
+		`mysql -uroot mysql -padmin -e "SET character_set_server = 'utf8mb4';"\n\n`
+	);
+	await waitForPrompt(emulator);
+	emulator.serial0_send(
+		`mysql -uroot mysql -padmin -e "SET collation_server = 'utf8mb4_unicode_ci';"\n\n`
+	);
+	emulator.serial0_send(
+		`mysql -uroot mysql -padmin -e "ALTER DATABASE test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"\n\n`
 	);
 	await waitForPrompt(emulator);
 }
